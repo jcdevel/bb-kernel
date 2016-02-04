@@ -1,0 +1,98 @@
+From 89a26981679c39233bb0b46c8bf193d4176550a1 Mon Sep 17 00:00:00 2001
+From: Juan Castillo <jcastillo.devel@gmail.com>
+Date: Thu, 11 Feb 2016 20:45:54 +0000
+Subject: [PATCH] ti-gpmc: add support for AAD-mux devices
+
+This fix allows to set the first assertion/deassertion times used
+when accessing AAD-multiplexed devices. The values may be defined
+in the device tree.
+---
+ Documentation/devicetree/bindings/bus/ti-gpmc.txt |  5 +++++
+ drivers/memory/omap-gpmc.c                        | 13 +++++++++++++
+ include/linux/omap-gpmc.h                         |  5 +++++
+ 3 files changed, 23 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/bus/ti-gpmc.txt b/Documentation/devicetree/bindings/bus/ti-gpmc.txt
+index 704be93..02752a7 100644
+--- a/Documentation/devicetree/bindings/bus/ti-gpmc.txt
++++ b/Documentation/devicetree/bindings/bus/ti-gpmc.txt
+@@ -46,10 +46,15 @@ Timing properties for child nodes. All are optional and default to 0.
+  - gpmc,adv-on-ns:	Assertion time
+  - gpmc,adv-rd-off-ns:	Read deassertion time
+  - gpmc,adv-wr-off-ns:	Write deassertion time
++ - gpmc,adv-aadmux-on-ns:	First assertion time on AAD-mux devices
++ - gpmc,adv-aadmux-rd-off-ns:	First read deassertion time on AAD-mux devices
++ - gpmc,adv-aadmux-wr-off-ns:	First write deassertion time on AAD-mux devices
+ 
+  WE signals timings (in nanoseconds) corresponding to GPMC_CONFIG4:
+  - gpmc,we-on-ns	Assertion time
+  - gpmc,we-off-ns:	Deassertion time
++ - gpmc,oe-aadmux-on-ns:	First assertion time on AAD-mux devices
++ - gpmc,oe-aadmux-off-ns:	First deassertion time on AAD-mux devices
+ 
+  OE signals timings (in nanoseconds) corresponding to GPMC_CONFIG4:
+  - gpmc,oe-on-ns:	Assertion time
+diff --git a/drivers/memory/omap-gpmc.c b/drivers/memory/omap-gpmc.c
+index c94ea0d..743586e 100644
+--- a/drivers/memory/omap-gpmc.c
++++ b/drivers/memory/omap-gpmc.c
+@@ -750,6 +750,14 @@ int gpmc_cs_set_timings(int cs, const struct gpmc_timings *t,
+ 	GPMC_SET_ONE(GPMC_CS_CONFIG6, 0, 3, bus_turnaround);
+ 	GPMC_SET_ONE(GPMC_CS_CONFIG6, 8, 11, cycle2cycle_delay);
+ 
++	if (s->mux_add_data == GPMC_MUX_AAD) {
++		GPMC_SET_ONE(GPMC_CS_CONFIG3,  4,  6, adv_aadmux_on);
++		GPMC_SET_ONE(GPMC_CS_CONFIG3, 24, 26, adv_aadmux_rd_off);
++		GPMC_SET_ONE(GPMC_CS_CONFIG3, 28, 30, adv_aadmux_wr_off);
++		GPMC_SET_ONE(GPMC_CS_CONFIG4,  4,  6, oe_aadmux_on);
++		GPMC_SET_ONE(GPMC_CS_CONFIG4, 13, 15, oe_aadmux_off);
++	}
++
+ 	if (gpmc_capability & GPMC_HAS_WR_DATA_MUX_BUS)
+ 		GPMC_SET_ONE(GPMC_CS_CONFIG6, 16, 19, wr_data_mux_bus);
+ 	if (gpmc_capability & GPMC_HAS_WR_ACCESS)
+@@ -1724,6 +1732,9 @@ static void __maybe_unused gpmc_read_timings_dt(struct device_node *np,
+ 	of_property_read_u32(np, "gpmc,adv-on-ns", &gpmc_t->adv_on);
+ 	of_property_read_u32(np, "gpmc,adv-rd-off-ns", &gpmc_t->adv_rd_off);
+ 	of_property_read_u32(np, "gpmc,adv-wr-off-ns", &gpmc_t->adv_wr_off);
++	of_property_read_u32(np, "gpmc,adv-aadmux-on-ns", &gpmc_t->adv_aadmux_on);
++	of_property_read_u32(np, "gpmc,adv-aadmux-rd-off-ns", &gpmc_t->adv_aadmux_rd_off);
++	of_property_read_u32(np, "gpmc,adv-aadmux-wr-off-ns", &gpmc_t->adv_aadmux_wr_off);
+ 
+ 	/* WE signal timings */
+ 	of_property_read_u32(np, "gpmc,we-on-ns", &gpmc_t->we_on);
+@@ -1732,6 +1743,8 @@ static void __maybe_unused gpmc_read_timings_dt(struct device_node *np,
+ 	/* OE signal timings */
+ 	of_property_read_u32(np, "gpmc,oe-on-ns", &gpmc_t->oe_on);
+ 	of_property_read_u32(np, "gpmc,oe-off-ns", &gpmc_t->oe_off);
++	of_property_read_u32(np, "gpmc,oe-aadmux-on-ns", &gpmc_t->oe_aadmux_on);
++	of_property_read_u32(np, "gpmc,oe-aadmux-off-ns", &gpmc_t->oe_aadmux_off);
+ 
+ 	/* access and cycle timings */
+ 	of_property_read_u32(np, "gpmc,page-burst-access-ns",
+diff --git a/include/linux/omap-gpmc.h b/include/linux/omap-gpmc.h
+index 7dee0014..bf1a428 100644
+--- a/include/linux/omap-gpmc.h
++++ b/include/linux/omap-gpmc.h
+@@ -51,6 +51,9 @@ struct gpmc_timings {
+ 	u32 adv_on;		/* Assertion time */
+ 	u32 adv_rd_off;		/* Read deassertion time */
+ 	u32 adv_wr_off;		/* Write deassertion time */
++	u32 adv_aadmux_on;	/* Assertion time in AAD mux */
++	u32 adv_aadmux_rd_off;	/* Read deassertion time in AAD mux */
++	u32 adv_aadmux_wr_off;	/* Write deassertion time in AAD mux */
+ 
+ 	/* WE signals timings corresponding to GPMC_CONFIG4 */
+ 	u32 we_on;		/* WE assertion time */
+@@ -59,6 +62,8 @@ struct gpmc_timings {
+ 	/* OE signals timings corresponding to GPMC_CONFIG4 */
+ 	u32 oe_on;		/* OE assertion time */
+ 	u32 oe_off;		/* OE deassertion time */
++	u32 oe_aadmux_on;	/* OE assertion time in AAD mux */
++	u32 oe_aadmux_off;	/* OE deassertion time in AAD mux */
+ 
+ 	/* Access time and cycle time timings corresponding to GPMC_CONFIG5 */
+ 	u32 page_burst_access;	/* Multiple access word delay */
+-- 
+1.9.1
+

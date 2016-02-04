@@ -210,6 +210,19 @@ ti () {
 		number=3
 		cleanup
 	fi
+
+	echo "dir: ti/drivers/memory/"
+	#regenerate="enable"
+	if [ "x${regenerate}" = "xenable" ] ; then
+		start_cleanup
+	fi
+
+	${git} "${DIR}/patches/ti/drivers/memory/0001-ti-gpmc-add-support-for-AAD-mux-devices.patch"
+
+	if [ "x${regenerate}" = "xenable" ] ; then
+		number=1
+		cleanup
+	fi
 }
 
 pru_uio () {
